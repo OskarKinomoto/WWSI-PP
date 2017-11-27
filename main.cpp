@@ -5,16 +5,7 @@
 #include <map>
 #include <numeric>
 
-/*
-Witam,
-
-Do algorytmu ważonych median powinien wziąć Pan liczby które są obliczone z plików ze statystykami .
-Liczby te należy obliczać jako suma różnic : receive timestamp i origin timestamp oraz destination timestamp i transmit timestamp. W ten sposób każdy wiersz da Panu jedną liczbę.
-W dokumentacji pod linkiem: https://www.eecis.udel.edu/~mills/ntp/html/monopt.html znajdzie Pan opis poszczególnych kolumn (w tym origin, receive, transmit i destination timestamp).
-
-W razie problemów proszę o e-mail.
-
- */
+#include "cxxopts.hpp"
 
 struct RawStat{
     int date; ///< date
@@ -34,6 +25,10 @@ struct RawStat{
     }
 };
 
+std::string timestampToTImeDate(double timestamp_ms) {
+    // TODO do pliku: lp data[1..4]
+}
+
 std::istream &operator>>(std::istream& stream, RawStat& rawstat) {
     stream >> rawstat.date >> rawstat.s >> rawstat.ip_source >> rawstat.ip_destination
            >> rawstat.ntp_s_origin_timestamp >> rawstat.ntp_s_receive_timestamp >> rawstat.ntp_s_transmit_timestamp
@@ -43,7 +38,7 @@ std::istream &operator>>(std::istream& stream, RawStat& rawstat) {
 }
 
 typedef std::vector<RawStat> RawStats;
-typedef std::map<double, size_t, std::greater<double>> WeightedMedianData;
+typedef std::map<double, size_t, std::greater<double> > WeightedMedianData;
 
 
 WeightedMedianData getWeightedMedianData(RawStats::iterator begin, RawStats::iterator end, std::vector<double> weights) {
@@ -80,22 +75,47 @@ double weightedMedian(const WeightedMedianData& data) {
     return median;
 }
 
-/*
- *
-Odnośnie Pana pytania - powinien Pan liczyć ważoną medianę w sposób kroczący tzn. pobierać kolejne wartości z plików z pomiarami tzn. (z tych które przesłałem Panu), wykonywać obliczenia i zapisywać wynik do pliku. W obliczenia ważonej mediany proszę przyjąć długość pamięci wstecz tzn. ile poprzednich próbek branych jest do wyliczenia ważonej mediany w każdym kroku. Parametry: długość pamięci wstecz oraz wagi (dla każdej poprzedniej próbki aż do maksymalnej pamięci wstecz) powinny być podawane przez użytkownika (nie powinny być zaszyte na stałe w algorytmie).
- *
- */
+std::vector<double> getSlopeWeights(double a, double n) {
+    std::vector<double> ret;
+    ret.reserve(n);
+
+    for (int i = 0; i < n; ++i) {
+        ret.emplace_back(a*i);
+    }
+    return ret;
+}
 
 struct Params {
     size_t median_back_log;
+    bool is_weights = false;
+    std::vector<double> v;
+    std::string path = "rawstats";
 };
 
-int main() {
-    std::ifstream file("rawstats");
-    auto& input = file;
+// kroczaca srednia -> EWMA
+
+int main(int argc, char** argv) {
 
     RawStats stats;
     Params p{.median_back_log = 10};
+
+    if (argc > 1) {
+        p.path = argv[1];
+    }
+
+    if (argc > 2) {
+        p.median_back_log = std::atoi(argv[2]);
+    }
+
+    if (argc > 3) {
+        p.is_weights = true;
+        for (int i = 2; i < argc + 2; ++i) {
+            p.v.emplace_back(std::atof(argv[i]));
+        }
+    }
+
+    std::ifstream file(p.path);
+    auto& input = file;
 
     while (input.good()) {
         RawStat rawStat;
@@ -109,9 +129,16 @@ int main() {
     std::cout << stats.size() << std::endl;
     std::cout << weightedMedian(weightedMedianData) << std::endl;
 
+    std::vector<double> weights_median(p.median_back_log, 1);
+
+    if (p.is_weights)
+        weights_median = p.v;
+
+    std::ofstream out("out");
+
     for (int i = p.median_back_log, j = 0; i < stats.size(); ++i, ++j) {
-        auto data = getWeightedMedianData(stats.begin() + j, stats.begin() + i, std::vector<double>(p.median_back_log, 1));
-        std::cout << j << "\t" << stats.at(i).calc << "\t" << weightedMedian(data) << std::endl;
+        auto data = getWeightedMedianData(stats.begin() + j, stats.begin() + i, weights_median);
+        out << j << "\t" << stats.at(i).calc << "\t" << weightedMedian(data) << std::endl;
     }
 
     return 0;
