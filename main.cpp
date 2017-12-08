@@ -4,8 +4,8 @@
 #include <vector>
 #include <map>
 #include <numeric>
-
-#include "cxxopts.hpp"
+#include <sstream>
+#include <iomanip>
 
 struct RawStat{
     int date; ///< date
@@ -25,8 +25,30 @@ struct RawStat{
     }
 };
 
+typedef std::vector<RawStat> RawStats;
+typedef std::map<double, size_t, std::greater<double> > WeightedMedianData;
+
 std::string timestampToTImeDate(double timestamp_ms) {
-    // TODO do pliku: lp data[1..4]
+    int s = timestamp_ms;
+    int z = s / 86400 + 719468;
+    int era = (z >= 0 ? z : z - 146096) / 146097;
+    unsigned doe = static_cast<unsigned>(z - era * 146097);
+    unsigned yoe = (doe - doe/1460 + doe/36524 - doe/146096) / 365;
+    int y = static_cast<int>(yoe) + era * 400;
+    unsigned doy = doe - (365*yoe + yoe/4 - yoe/100);
+    unsigned mp = (5*doy + 2)/153;
+    unsigned d = doy - (153*mp+2)/5 + 1;
+    unsigned m = mp + (mp < 10 ? 3 : -9);
+    y += (m <= 2);
+    int sec_in_day = s % (24*60*60);
+    int sec = sec_in_day % 60;
+    int min_in_day = sec_in_day / 60;
+    int min = min_in_day % 60;
+    int hr = min_in_day / 60;
+    std::stringstream stream;
+    stream << y << std::setfill('0') << std::setw(2) << m << "-" << d << " "
+      << hr << ":" << min << ":" << sec << std::endl;
+    return stream.str();
 }
 
 std::istream &operator>>(std::istream& stream, RawStat& rawstat) {
@@ -36,10 +58,6 @@ std::istream &operator>>(std::istream& stream, RawStat& rawstat) {
 
     return stream;
 }
-
-typedef std::vector<RawStat> RawStats;
-typedef std::map<double, size_t, std::greater<double> > WeightedMedianData;
-
 
 WeightedMedianData getWeightedMedianData(RawStats::iterator begin, RawStats::iterator end, std::vector<double> weights) {
     WeightedMedianData data;
@@ -75,21 +93,12 @@ double weightedMedian(const WeightedMedianData& data) {
     return median;
 }
 
-std::vector<double> getSlopeWeights(double a, double n) {
-    std::vector<double> ret;
-    ret.reserve(n);
-
-    for (int i = 0; i < n; ++i) {
-        ret.emplace_back(a*i);
-    }
-    return ret;
-}
-
 struct Params {
     size_t median_back_log;
     bool is_weights = false;
     std::vector<double> v;
     std::string path = "rawstats";
+    std::string out_path = "out";
 };
 
 // kroczaca srednia -> EWMA
@@ -104,12 +113,16 @@ int main(int argc, char** argv) {
     }
 
     if (argc > 2) {
-        p.median_back_log = std::atoi(argv[2]);
+        p.out_path = argv[2];
     }
 
     if (argc > 3) {
+        p.median_back_log = std::atoi(argv[3]);
+    }
+
+    if (argc > 4) {
         p.is_weights = true;
-        for (int i = 2; i < argc + 2; ++i) {
+        for (int i = 4; i < argc; ++i) {
             p.v.emplace_back(std::atof(argv[i]));
         }
     }
@@ -134,7 +147,7 @@ int main(int argc, char** argv) {
     if (p.is_weights)
         weights_median = p.v;
 
-    std::ofstream out("out");
+    std::ofstream out(p.out_path);
 
     for (int i = p.median_back_log, j = 0; i < stats.size(); ++i, ++j) {
         auto data = getWeightedMedianData(stats.begin() + j, stats.begin() + i, weights_median);

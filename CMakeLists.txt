@@ -10,4 +10,4 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 configure_file("data/rawstats" "bin/rawstats" COPYONLY)
 configure_file("data/rawstats2" "bin/rawstats2" COPYONLY)
 
-add_executable("wwsi-pp" "main.cpp" "cxxopts.hpp" )
+add_executable("wwsi-pp" "main.cpp")
